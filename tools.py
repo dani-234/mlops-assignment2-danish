@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 MAX_TOOL_OUTPUT_CHARS = 12000
 
@@ -68,11 +69,32 @@ def _remove_readonly(func, path, _):
         pass
 
 
+def normalize_repo_url(repo_url: str) -> str:
+    """Normalize supported repository inputs (plain GitHub URL, Markdown URL, or local path)."""
+    candidate = repo_url.strip()
+    markdown_match = re.fullmatch(r"\[(https?://github\.com/[^\]]+)\]\((https?://github\.com/[^\)]+)\)", candidate)
+    if markdown_match:
+        left_url, right_url = markdown_match.groups()
+        if left_url == right_url:
+            candidate = left_url
+
+    if os.path.isdir(candidate):
+        return candidate
+
+    parsed = urlparse(candidate)
+    if parsed.scheme in {"http", "https"} and parsed.netloc.lower() == "github.com":
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if len(path_parts) >= 2:
+            return candidate
+
+    raise ValueError(f"Invalid repository URL: '{repo_url}'. Must be a public GitHub URL.")
+
+
 class RepositorySandbox:
     """Manages an isolated temporary clone of the target GitHub repository."""
 
     def __init__(self, repo_url: str):
-        self.repo_url = repo_url.strip()
+        self.repo_url = normalize_repo_url(repo_url)
         self.temp_dir: str | None = None
         self.root_path: Path | None = None
 
@@ -84,15 +106,6 @@ class RepositorySandbox:
         self.cleanup()
 
     def clone(self) -> None:
-        if not (
-            self.repo_url.startswith("[https://github.com/](https://github.com/)")
-            or self.repo_url.startswith("[http://github.com/](http://github.com/)")
-            or os.path.isdir(self.repo_url)
-        ):
-            raise ValueError(
-                f"Invalid repository URL: '{self.repo_url}'. Must be a public GitHub URL."
-            )
-
         self.temp_dir = tempfile.mkdtemp(prefix="devops_audit_")
         self.root_path = Path(self.temp_dir).resolve()
 
@@ -131,7 +144,9 @@ class RepositorySandbox:
             raise RuntimeError("Repository sandbox is not initialized.")
         clean_rel = relative_path.lstrip("/\\") if relative_path else "."
         resolved = (self.root_path / clean_rel).resolve()
-        if not str(resolved).startswith(str(self.root_path)):
+        try:
+            resolved.relative_to(self.root_path)
+        except ValueError:
             raise PermissionError(f"Access denied: Path '{relative_path}' escapes sandbox.")
         return resolved
 

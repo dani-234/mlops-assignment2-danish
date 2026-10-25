@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from agent import main, parse_args
+from core.llm_client import LLMClient, normalize_model_name
 from core.loop import sanitize_and_deduplicate_violations
 from core.schemas import AuditReport, Violation
 
@@ -96,3 +97,26 @@ def test_end_to_end_cli_writes_valid_json(mock_run_agent: MagicMock, tmp_path: P
     payload = json.loads(out_file.read_text(encoding="utf-8"))
     assert payload["repository"] == "[https://github.com/example/demo-project](https://github.com/example/demo-project)"
     assert len(payload["violations"]) == 1
+
+
+def test_llm_client_ignores_placeholder_openai_key_and_selects_gemini(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "your_openai_api_key_here")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini-test-key")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    with patch("core.llm_client.OpenAI") as mock_openai:
+        client = LLMClient()
+
+    assert client.provider_name == "Google Gemini"
+    assert client.base_url == "https://generativelanguage.googleapis.com/v1beta/openai/"
+    assert client.model == "models/gemini-3.8-flash"
+    assert client.supports_native_tool_calling is False
+    mock_openai.assert_called_once()
+
+
+def test_normalize_model_name_handles_misformatted_env_prefix():
+    assert (
+        normalize_model_name("Google Gemini", "LLM_MODEL=gemini-3.8-flash")
+        == "models/gemini-3.8-flash"
+    )

@@ -22,7 +22,13 @@ def sanitize_and_deduplicate_violations(
             candidate = v.file.strip().replace("\\", "/").lstrip("./")
             if repo_root:
                 full_candidate = (repo_root / candidate).resolve()
-                if str(full_candidate).startswith(str(repo_root)) and full_candidate.exists() and full_candidate.is_file():
+                is_within_repo = False
+                try:
+                    full_candidate.relative_to(repo_root)
+                    is_within_repo = True
+                except ValueError:
+                    is_within_repo = False
+                if is_within_repo and full_candidate.exists() and full_candidate.is_file():
                     norm_file = candidate
             else:
                 norm_file = candidate
@@ -80,34 +86,80 @@ def run_audit_agent(repo_url: str, max_iterations: int = 15) -> AuditReport:
 
         total_tool_calls = 0
         nudged_for_depth = False
+        allowed_tool_names = {tool["function"]["name"] for tool in TOOL_DEFINITIONS}
 
         for iteration in range(1, max_iterations + 1):
             print(f"[Agent] --- Cycle {iteration}/{max_iterations} (Observe & Reason) ---", file=sys.stderr)
-            assistant_msg = llm.chat_step(messages=messages, tools=TOOL_DEFINITIONS)
+            assistant_content = ""
+            planned_tool_calls: list[dict[str, Any]] = []
 
-            msg_dict: dict[str, Any] = {
-                "role": "assistant",
-                "content": assistant_msg.content or "",
-            }
-            if assistant_msg.tool_calls:
-                msg_dict["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
+            if llm.supports_native_tool_calling:
+                assistant_msg = llm.chat_step(messages=messages, tools=TOOL_DEFINITIONS)
+                assistant_content = assistant_msg.content or ""
+                if assistant_msg.tool_calls:
+                    planned_tool_calls = [
+                        {
+                            "id": tc.id,
                             "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in assistant_msg.tool_calls
-                ]
-            messages.append(msg_dict)
+                            "arguments": tc.function.arguments or "{}",
+                        }
+                        for tc in assistant_msg.tool_calls
+                    ]
+                msg_dict: dict[str, Any] = {"role": "assistant", "content": assistant_content}
+                if planned_tool_calls:
+                    msg_dict["tool_calls"] = [
+                        {
+                            "id": tc["id"],
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": tc["arguments"],
+                            },
+                        }
+                        for tc in planned_tool_calls
+                    ]
+                messages.append(msg_dict)
+            else:
+                action_payload = llm.choose_tool_action(
+                    messages=messages,
+                    tool_names=sorted(allowed_tool_names),
+                )
+                action_name = action_payload.get("action")
+                assistant_content = json.dumps(action_payload)
 
-            if assistant_msg.content:
-                thought_preview = assistant_msg.content.strip().replace("\n", " ")[:180]
+                if action_name == "tool":
+                    tool_name = str(action_payload.get("tool", "")).strip()
+                    if tool_name not in allowed_tool_names:
+                        messages.append(
+                            {"role": "assistant", "content": assistant_content}
+                        )
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"Invalid tool selection '{tool_name}'. Choose one of: "
+                                    + ", ".join(sorted(allowed_tool_names))
+                                ),
+                            }
+                        )
+                        continue
+                    arguments = action_payload.get("arguments", {})
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                    planned_tool_calls = [
+                        {
+                            "id": f"gemini-tool-{iteration}",
+                            "name": tool_name,
+                            "arguments": json.dumps(arguments),
+                        }
+                    ]
+                messages.append({"role": "assistant", "content": assistant_content})
+
+            if assistant_content:
+                thought_preview = assistant_content.strip().replace("\n", " ")[:180]
                 print(f"[Agent][Reason] {thought_preview}...", file=sys.stderr)
 
-            if not assistant_msg.tool_calls:
+            if not planned_tool_calls:
                 if total_tool_calls < 3 and not nudged_for_depth:
                     nudged_for_depth = True
                     print(
@@ -129,9 +181,9 @@ def run_audit_agent(repo_url: str, max_iterations: int = 15) -> AuditReport:
                 print("[Agent] Investigation complete. Moving to report synthesis.", file=sys.stderr)
                 break
 
-            for tool_call in assistant_msg.tool_calls:
-                func_name = tool_call.function.name
-                raw_args = tool_call.function.arguments or "{}"
+            for tool_call in planned_tool_calls:
+                func_name = tool_call["name"]
+                raw_args = tool_call["arguments"]
                 try:
                     parsed_args = json.loads(raw_args)
                     if not isinstance(parsed_args, dict):
@@ -149,14 +201,27 @@ def run_audit_agent(repo_url: str, max_iterations: int = 15) -> AuditReport:
                         + f"\n... [Truncated tool output at {MAX_TOOL_OUTPUT_CHARS} chars]"
                     )
 
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": func_name,
-                        "content": raw_result,
-                    }
-                )
+                if llm.supports_native_tool_calling:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "name": func_name,
+                            "content": raw_result,
+                        }
+                    )
+                else:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "Tool execution result:\n"
+                                f"Tool: {func_name}\n"
+                                f"Arguments: {json.dumps(parsed_args, ensure_ascii=True)}\n"
+                                f"Output:\n{raw_result}"
+                            ),
+                        }
+                    )
 
         print(
             f"[Agent] Synthesizing structured report after {total_tool_calls} tool executions...",

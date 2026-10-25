@@ -28,6 +28,7 @@ flowchart TD
 
 ### Key Engineering Highlights
 - **Dynamic Tool Selection (`core/loop.py`):** Starts with repository discovery (`list_files`, `git_log`), maps the project stack, and autonomously sequences follow-up tool calls (`read_file`, `search_code`, `run_ruff`) to verify context before reporting.
+- **Gemini-Compatible Tool Orchestration (`core/llm_client.py`, `core/loop.py`):** When using `GEMINI_API_KEY`, the agent switches from native function-calling to strict JSON action selection (`{"action":"tool"| "final"}`) to preserve multi-step autonomous auditing on Gemini endpoints.
 - **Zero-Trust Sandbox & Safety (`tools.py`):** Target repositories are cloned with `GIT_TERMINAL_PROMPT=0` into an ephemeral `tempfile` directory. Path traversal outside the sandbox is blocked, untrusted repository code is never executed, and read-only `.git` packfiles are cleaned up across both Windows and Linux.
 - **Defense-in-Depth Secret Scrubbing (`tools.py`):** Multi-pattern regex redaction scrubs API keys (`sk-...`, `ghp_...`, `AKIA...`, `AIza...`), PEM private keys, and password/secret assignments *before* tool output enters the LLM context or `report.json`.
 - **Anti-False-Positive Guardrails (`core/prompts.py` & `core/loop.py`):** Recognizes valid architectural equivalents (e.g., `pyproject.toml` vs `requirements.txt`), never infers remote GitHub branch protection rules from local files, and deduplicates findings via post-processing.
@@ -90,7 +91,7 @@ cp .env.example .env
 ```
 - `OPENAI_API_KEY`: Standard OpenAI API key (`gpt-4o-mini` default, configurable via `LLM_MODEL`).
 - `GITHUB_TOKEN`: GitHub Personal Access Token for GitHub Models (`[https://models.inference.ai.azure.com](https://models.inference.ai.azure.com)`, uses `gpt-4o`).
-- `GEMINI_API_KEY`: Google Gemini API key via OpenAI-compatible endpoint (`gemini-2.5-flash`).
+- `GEMINI_API_KEY`: Google Gemini API key via OpenAI-compatible endpoint (`gemini-3.8-flash` default; the client normalizes to `models/...` automatically).
 
 ---
 

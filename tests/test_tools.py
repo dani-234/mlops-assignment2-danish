@@ -1,9 +1,10 @@
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from tools import RepositorySandbox, redact_secrets
+from tools import RepositorySandbox, normalize_repo_url, redact_secrets
 
 
 @pytest.fixture
@@ -67,3 +68,38 @@ def test_sandbox_tools_lifecycle(dummy_git_repo: Path):
 
         traversal_out = sandbox.read_file("../../outside.txt")
         assert "Access denied" in traversal_out or "Error" in traversal_out
+
+
+def test_normalize_repo_url_accepts_standard_github_url():
+    assert (
+        normalize_repo_url("https://github.com/octocat/Hello-World")
+        == "https://github.com/octocat/Hello-World"
+    )
+
+
+def test_normalize_repo_url_accepts_markdown_formatted_url():
+    assert (
+        normalize_repo_url("[https://github.com/octocat/Hello-World](https://github.com/octocat/Hello-World)")
+        == "https://github.com/octocat/Hello-World"
+    )
+
+
+def test_normalize_repo_url_rejects_non_github_http_url():
+    with pytest.raises(ValueError):
+        normalize_repo_url("https://example.com/not-github/repo")
+
+
+def test_sandbox_clone_uses_normalized_github_url():
+    with patch("tools.subprocess.run") as run_mock:
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=["git", "clone"], returncode=0, stdout="", stderr=""
+        )
+        sandbox = RepositorySandbox(
+            "[https://github.com/octocat/Hello-World](https://github.com/octocat/Hello-World)"
+        )
+        sandbox.clone()
+        try:
+            clone_args = run_mock.call_args[0][0]
+            assert clone_args[4] == "https://github.com/octocat/Hello-World"
+        finally:
+            sandbox.cleanup()
