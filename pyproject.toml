@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlops-assignment2-danish"
+version = "1.0.0"
+description = "Autonomous ReAct AI Agent for DevOps Repository Auditing"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.50.0",
+    "pydantic>=2.9.0",
+    "python-dotenv>=1.0.1",
+    "ruff>=0.6.0",
+    "pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+ignore = ["BLE001", "PLW1510", "PYI034", "S110"]

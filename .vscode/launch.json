@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug DevOps Audit Agent",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/agent.py",
+            "args": [
+                "--repo",
+                "[https://github.com/dani-234/mlops-assignment2-danish](https://github.com/dani-234/mlops-assignment2-danish)",
+                "--output",
+                "report.json"
+            ],
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "justMyCode": true
+        },
+        {
+            "name": "Run Pytest Suite",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["-v"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

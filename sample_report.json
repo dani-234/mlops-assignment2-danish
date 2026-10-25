@@ -1,0 +1,25 @@
+{
+  "repository": "[https://github.com/octocat/Hello-World](https://github.com/octocat/Hello-World)",
+  "violations": [
+    {
+      "rule_id": "HYG-001",
+      "category": "repository_hygiene",
+      "severity": "medium",
+      "file": null,
+      "line": null,
+      "description": "Missing .gitignore file in repository root",
+      "evidence": "list_files() returned only 'README' in repository root with no .gitignore configuration present.",
+      "recommendation": "Add a language-appropriate .gitignore file to prevent accidental tracking of environment files, compiled artifacts, and OS metadata."
+    },
+    {
+      "rule_id": "CI-001",
+      "category": "github_actions_ci",
+      "severity": "medium",
+      "file": null,
+      "line": null,
+      "description": "No continuous integration (CI) workflows configured",
+      "evidence": "list_files() confirmed the absence of .github/workflows/ or any alternative CI configuration files.",
+      "recommendation": "Configure a GitHub Actions workflow under .github/workflows/ to automate linting, security scanning, and build verification on push and pull_request events."
+    }
+  ]
+}

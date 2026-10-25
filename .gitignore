@@ -1,0 +1,26 @@
+# Environments & Secrets
+.env
+.venv/
+venv/
+ENV/
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# IDE & OS Artifacts
+.vs/
+.DS_Store
+Thumbs.db
+
+# Temporary Agent Outputs & Build Spec (Keep sample_report.json tracked!)
+report.json
+self_check.json
+devops_audit_*/
+MASTER_BUILD_SPEC.md
